@@ -80,7 +80,7 @@ static void init_state(void) {
 			CB_Init(&cbPress);
 			GNGGA_Init(&gps_parser, &huart6);
 			imuData.wqAdr = 0;
-			currentState = MAIN; // TODO: Change to LORA_WAIT
+			currentState = LORA_WAIT;
 		} else {
 			Error(errorCode);
 		}
