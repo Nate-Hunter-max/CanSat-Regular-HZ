@@ -10,8 +10,6 @@
 #ifndef FSM_H
 #define FSM_H
 
-#include "main.h"
-
 /**
  * @brief Initialize the Finite State Machine
  * @note This should be called once at system startup

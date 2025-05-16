@@ -4,32 +4,9 @@
  */
 
 #include "FSM.h"
-#include "main.h"
 #include "user.h"
 
-#include "MS5611.h"
-#include "LIS3.h"
-#include "LSM6.h"
-#include "LoRa.h"
-#include "MicroSD.h"
-#include "W25Qx.h"
-#include "CircularBuffer.h"
-
 #include <math.h>
-/** @brief IMU data structure */
-struct ImuData {
-	uint32_t time;          ///< Milliseconds from start
-	int32_t temp;           ///< MS56 temperature (centigrade*10e2)
-	uint32_t press;         ///< MS56 pressure (Pa)
-	float magData[3];       ///< LIS3 mag (mG)
-	float accelData[3];     ///< LSM6 accel (mG)
-	float gyroData[3];      ///< LSM6 gyro (mdps)
-	int32_t altitude;       ///< Altitude (zero at start, cm)
-	uint32_t flags;         ///< Flags (0|0|0|0|Land|ResSys|Eject|Start)
-	uint32_t press0;        ///< MS56 pressure at 0 Alt (Pa)
-	float vectAbs;          ///< Absolute value of accel vector
-	uint32_t wqAdr;         ///< WQ address
-} imuData;
 
 /** @brief System states */
 enum states {
@@ -40,16 +17,10 @@ enum states {
 	DUMP        ///< Memory dump state
 };
 
-extern ADC_HandleTypeDef hadc1;
-extern I2C_HandleTypeDef hi2c1;
-extern SD_HandleTypeDef hsd;
-extern SPI_HandleTypeDef hspi1;
-extern TIM_HandleTypeDef htim3;
-extern TIM_HandleTypeDef htim11;
-extern UART_HandleTypeDef huart1;
-
 static enum states lastState = LANDING;
 static enum states currentState = INIT;
+
+ImuData imuData;
 
 static CircularBuffer cbPress = { .item_size = sizeof(imuData.press), .size = PRESS_BUFFER_LEN };
 
@@ -76,25 +47,7 @@ static LoRa_HandleTypeDef lora = { .spi = &hspi1, .NSS_Port = LORA_NSS_GPIO_Port
 /** @brief W25Q128 struct */
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
 
-/** @brief Forward declarations */
-void Error(uint8_t errCode);
-void FlashLED(uint16_t led);
-void StoreVectAbs(struct ImuData *dat);
-void ImuSaveAll(struct ImuData *imuData);
-void ImuGetAll(struct ImuData *imuData);
 
-/**
- * @brief Compare two uint32_t values and return their absolute difference.
- *
- * @param a Pointer to the first value.
- * @param b Pointer to the second value.
- * @return uint32_t Absolute difference between the two values.
- */
-uint32_t compare_uint32(const void *a, const void *b) {
-    uint32_t val_a = *(const uint32_t*)a;
-    uint32_t val_b = *(const uint32_t*)b;
-    return (val_a > val_b) ? (val_a - val_b) : (val_b - val_a);
-}
 
 /**
  * @brief Initialize all system components
@@ -115,8 +68,6 @@ static void init_state(void) {
 			errorCode = 5;
 		if (!W25Qx_Init(&wq))
 			errorCode = 6;
-
-		HAL_TIM_Base_Start_IT(&htim11);
 
 		if (!errorCode) {
 			MS5611_SetOS(MS56_OSR_4096, MS56_OSR_4096);
@@ -209,13 +160,13 @@ static void main_state(void) {
 			bitSet(imuData.flags, 1);
 
 		if (bitRead(imuData.flags, 1)) {
-			CB_Add(&cbPress, &imuData.press);
+			CB_Push(&cbPress, &imuData.press);
 			if (CB_Diff(&cbPress, compare_uint32) < PRESS_LAND_DELTA) {
 				bitSet(imuData.flags, 2);
 				currentState = LANDING;
 			}
 		}
-		ImuSaveAll(&imuData);
+		ImuSaveAll(&imuData, &lora, &wq);
 	}
 }
 
@@ -229,7 +180,7 @@ static void landing_state(void) {
 	}
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
 		ImuGetAll(&imuData);
-		ImuSaveAll(&imuData);
+		ImuSaveAll(&imuData, &lora, &wq);
 	}
 }
 
@@ -285,57 +236,3 @@ void FSM_Update(void) {
 	}
 }
 
-void StoreVectAbs(struct ImuData *dat) {
-	dat->vectAbs = 0;
-	for (uint8_t i = 0; i < 3; i++)
-		dat->vectAbs += dat->accelData[i] * dat->accelData[i];
-	dat->vectAbs = sqrt(dat->vectAbs);
-}
-
-void ImuGetAll(struct ImuData *imuData) {
-	imuData->time = HAL_GetTick();
-	MS5611_Read(&imuData->temp, &imuData->press);
-	LIS3_Read(imuData->magData);
-	LSM6_Read(imuData->accelData, imuData->gyroData);
-	StoreVectAbs(imuData);
-	imuData->altitude = MS5611_GetAltitude(&imuData->press, &imuData->press0);
-}
-
-void ImuSaveAll(struct ImuData *imuData) {
-	FlashLED(LED2_Pin);
-	LoRa_Transmit(&lora, imuData, FRAME_SIZE);
-	W25Qx_WriteData(&wq, imuData->wqAdr, imuData, FRAME_SIZE);
-	imuData->wqAdr += FRAME_SIZE;
-	FlashLED(LED1_Pin);
-	if (microSD_Write(imuData, FRAME_SIZE, SD_FILENAME) != FR_OK) {
-		FlashLED(LED_ERR_Pin);
-		MX_FATFS_Init();
-		microSD_Init();
-	}
-	FlashLED(0);
-}
-
-void FlashLED(uint16_t led) {
-	LED1_GPIO_Port->ODR &= ~LED1_Pin;
-	LED2_GPIO_Port->ODR &= ~LED2_Pin;
-	LED_ERR_GPIO_Port->ODR &= ~LED_ERR_Pin;
-//@formatter:off
-	switch (led){
-		case LED1_Pin: LED1_GPIO_Port->ODR |= LED1_Pin; break;
-		case LED2_Pin: LED2_GPIO_Port->ODR |= LED2_Pin; break;
-		case LED_ERR_Pin: LED_ERR_GPIO_Port->ODR |= LED_ERR_Pin; break;
-		default: break;
-	}}
-//@formatter:on
-
-void Error(uint8_t errCode) {
-	while (1) {
-		for (uint8_t i = 0; i < errCode; i++) {
-			FlashLED(LED_ERR_Pin);
-			HAL_Delay(200);
-			FlashLED(0);
-			HAL_Delay(200);
-		}
-		HAL_Delay(500);
-	}
-}
