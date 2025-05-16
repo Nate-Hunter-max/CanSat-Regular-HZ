@@ -18,6 +18,7 @@
 #include "MicroSD.h"
 #include "W25Qx.h"
 #include "CircularBuffer.h"
+#include "GNGGA_Parser.h"
 #include <math.h>
 
 extern ADC_HandleTypeDef hadc1;
@@ -147,5 +148,17 @@ uint32_t compare_uint32(const void *a, const void *b);
  * @brief BN220 Initialization & NMEA setttings
  */
 uint8_t BN220_Init(void);
+
+/**
+ * @brief Converts GPS coordinates from degrees-minutes format to decimal degrees
+ *
+ * This function processes GPS data from a GNGGA parser, checks if the data is valid,
+ * and converts the latitude and longitude from degrees-minutes format to decimal degrees.
+ * The converted values are stored in the provided IMU data structure.
+ *
+ * @param gps_parser Pointer to the GNGGA_Parser structure containing raw GPS data
+ * @param imuData Pointer to the IMU data structure where converted coordinates will be stored
+ */
+void BN220_TryGet(GNGGA_Parser* gps_parser, ImuData* imuData);
 
 #endif /* INC_USER_H_ */

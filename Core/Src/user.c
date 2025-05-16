@@ -1,3 +1,7 @@
+/**
+ * @file user.c
+ * @brief User configuration and utility functions for CanSat-Regular-HZ
+ */
 #include "user.h"
 #include "MS5611.h"
 #include "LIS3.h"
@@ -8,25 +12,19 @@
 #include "CircularBuffer.h"
 
 /** @brief BN220 GPS settings (dumped from u-center)*/
-const uint8_t BN220_GpsSettings[] = {
-  0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB, 0x11,  //Disable GLL
-  0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x02, 0x00, 0xFC, 0x13,  //Disable GSA
-  0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x03, 0x00, 0xFD, 0x15,  //Disable GSV
-  0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x04, 0x00, 0xFE, 0x17,  //Disable RMC
-  0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x05, 0x00, 0xFF, 0x19,  //Disable VTG
-  /*-------------Set-baudrate-to-115200--------------*/
-  0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0xC2, 0x01, 0x00, 0x07,
-  0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x7E, 0xB5, 0x62, 0x06, 0x00, 0x01, 0x00, 0x01, 0x08, 0x22
-};
-
-uint8_t BN220_Init(){
-	HAL_StatusTypeDef err;
-	err = HAL_UART_Transmit(&huart6, BN220_GpsSettings, sizeof BN220_GpsSettings, 1000);
-	if (err != HAL_OK) return err;
-  huart6.Init.BaudRate = 115200;
-  err = HAL_UART_Init(&huart6); // Try to set 115200
-  return err;
-}
+const uint8_t BN220_GpsSettings[] = { 0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB,
+		0x11,  //Disable GLL
+		0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x02, 0x00, 0xFC,
+		0x13,  //Disable GSA
+		0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x03, 0x00, 0xFD,
+		0x15,  //Disable GSV
+		0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x04, 0x00, 0xFE,
+		0x17,  //Disable RMC
+		0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x05, 0x00, 0xFF,
+		0x19,  //Disable VTG
+		/*-------------Set-baudrate-to-115200--------------*/
+		0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0xC2, 0x01, 0x00, 0x07, 0x00,
+		0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x7E, 0xB5, 0x62, 0x06, 0x00, 0x01, 0x00, 0x01, 0x08, 0x22 };
 
 void StoreVectAbs(ImuData *dat) {
 	dat->vectAbs = 0;
@@ -44,7 +42,7 @@ void ImuGetAll(ImuData *imuData) {
 	imuData->altitude = MS5611_GetAltitude(&imuData->press, &imuData->press0);
 }
 
-void ImuSaveAll(ImuData *imuData, LoRa_HandleTypeDef* lora, W25Qx_Device* wq) {
+void ImuSaveAll(ImuData *imuData, LoRa_HandleTypeDef *lora, W25Qx_Device *wq) {
 	FlashLED(LED2_Pin);
 	LoRa_Transmit(lora, imuData, FRAME_SIZE);
 	W25Qx_WriteData(wq, imuData->wqAdr, imuData, FRAME_SIZE);
@@ -71,13 +69,6 @@ void FlashLED(uint16_t led) {
 	}}
 //@formatter:on
 
-/**
- * @brief Compare two uint32_t values and return their absolute difference.
- *
- * @param a Pointer to the first value.
- * @param b Pointer to the second value.
- * @return uint32_t Absolute difference between the two values.
- */
 uint32_t compare_uint32(const void *a, const void *b) {
 	uint32_t val_a = *(const uint32_t*) a;
 	uint32_t val_b = *(const uint32_t*) b;
@@ -96,3 +87,31 @@ void Error(uint8_t errCode) {
 	}
 }
 
+void BN220_TryGet(GNGGA_Parser *gps_parser, ImuData *imuData) {
+	// Process the GPS data
+	GNGGA_Loop(gps_parser);
+
+	if (gps_parser->data.finish) {
+    // Convert latitude from degrees-minutes to decimal degrees
+    float lat_degrees = floor(fabs(gps_parser->data.latitude) / 100);
+    float lat_minutes = fabs(gps_parser->data.latitude) - (lat_degrees * 100);
+    imuData->lat = lat_degrees + (lat_minutes / 60.0f);
+    if (gps_parser->data.latitude < 0) imuData->lat *= -1;
+
+    // Convert longitude from degrees-minutes to decimal degrees
+    float lon_degrees = floor(fabs(gps_parser->data.longitude) / 100);
+    float lon_minutes = fabs(gps_parser->data.longitude) - (lon_degrees * 100);
+    imuData->lon = lon_degrees + (lon_minutes / 60.0f);
+    if (gps_parser->data.longitude < 0) imuData->lon *= -1;
+	}
+}
+
+uint8_t BN220_Init() {
+	HAL_StatusTypeDef err;
+	err = HAL_UART_Transmit(&huart6, BN220_GpsSettings, sizeof BN220_GpsSettings, 1000);
+	if (err != HAL_OK)
+		return err;
+	huart6.Init.BaudRate = 115200;
+	err = HAL_UART_Init(&huart6); // Try to set 115200
+	return err;
+}

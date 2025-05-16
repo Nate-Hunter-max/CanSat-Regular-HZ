@@ -153,11 +153,7 @@ static void main_state(void) {
 		imuData.time = HAL_GetTick();
 	}
 
-	GNGGA_Loop(&gps_parser);
-	if (gps_parser.data.finish) {
-		imuData.lat = gps_parser.data.latitude;
-		imuData.lon = gps_parser.data.longitude;
-	}
+	BN220_TryGet(&gps_parser, &imuData);
 
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD) {
 		HAL_ADC_Start(&hadc1);
@@ -188,11 +184,7 @@ static void landing_state(void) {
 		imuData.time = HAL_GetTick();
 	}
 
-	GNGGA_Loop(&gps_parser);
-	if (gps_parser.data.finish) {
-		imuData.lat = gps_parser.data.latitude;
-		imuData.lon = gps_parser.data.longitude;
-	}
+	BN220_TryGet(&gps_parser, &imuData);
 
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
 		ImuGetAll(&imuData);
