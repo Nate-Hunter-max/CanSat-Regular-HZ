@@ -5,7 +5,7 @@
 
 #include "FSM.h"
 #include "user.h"
-
+#include "GNGGA_Parser.h"
 #include <math.h>
 
 /** @brief System states */
@@ -19,10 +19,11 @@ enum states {
 
 static enum states lastState = LANDING;
 static enum states currentState = INIT;
-
 ImuData imuData;
 
 static CircularBuffer cbPress = { .item_size = sizeof(imuData.press), .size = PRESS_BUFFER_LEN };
+
+GNGGA_Parser gps_parser;
 
 //@formatter:off
 /** @brief LoRa config*/
@@ -41,13 +42,12 @@ static LoRaConfig loraCfg = {
 		.txPower = 0x01
 };
 //@formatter:on
+
 /** @brief LoRa struct */
 static LoRa_HandleTypeDef lora = { .spi = &hspi1, .NSS_Port = LORA_NSS_GPIO_Port, .NSS_Pin = LORA_NSS_Pin, };
 
 /** @brief W25Q128 struct */
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
-
-
 
 /**
  * @brief Initialize all system components
@@ -68,6 +68,8 @@ static void init_state(void) {
 			errorCode = 5;
 		if (!W25Qx_Init(&wq))
 			errorCode = 6;
+		if (BN220_Init() != HAL_OK)
+			errorCode = 7;
 
 		if (!errorCode) {
 			MS5611_SetOS(MS56_OSR_4096, MS56_OSR_4096);
@@ -76,8 +78,9 @@ static void init_state(void) {
 			LIS3_Config(LIS_CTRL3, LIS_CYCLIC);
 			LSM6_ConfigAG(LSM6_ACCEL_16G | LSM6_CFG_12_5_Hz, LSM6_GYRO_2000DPS | LSM6_CFG_12_5_Hz);
 			CB_Init(&cbPress);
+			GNGGA_Init(&gps_parser, &huart6);
 			imuData.wqAdr = 0;
-			currentState = LORA_WAIT;
+			currentState = MAIN; // TODO: Change to LORA_WAIT
 		} else {
 			Error(errorCode);
 		}
@@ -150,6 +153,12 @@ static void main_state(void) {
 		imuData.time = HAL_GetTick();
 	}
 
+	GNGGA_Loop(&gps_parser);
+	if (gps_parser.data.finish) {
+		imuData.lat = gps_parser.data.latitude;
+		imuData.lon = gps_parser.data.longitude;
+	}
+
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD) {
 		HAL_ADC_Start(&hadc1);
 		ImuGetAll(&imuData);
@@ -178,6 +187,13 @@ static void landing_state(void) {
 		lastState = currentState;
 		imuData.time = HAL_GetTick();
 	}
+
+	GNGGA_Loop(&gps_parser);
+	if (gps_parser.data.finish) {
+		imuData.lat = gps_parser.data.latitude;
+		imuData.lon = gps_parser.data.longitude;
+	}
+
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
 		ImuGetAll(&imuData);
 		ImuSaveAll(&imuData, &lora, &wq);
@@ -233,6 +249,12 @@ void FSM_Update(void) {
 			dump_state();
 		default:
 			break;
+	}
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	if (huart == &huart6) {
+		GNGGA_UART_IRQHandler(&gps_parser);
 	}
 }
 

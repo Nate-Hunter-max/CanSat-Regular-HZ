@@ -24,7 +24,7 @@ extern ADC_HandleTypeDef hadc1;
 extern I2C_HandleTypeDef hi2c1;
 extern SD_HandleTypeDef hsd;
 extern SPI_HandleTypeDef hspi1;
-extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart6;
 
 /**
  * @defgroup user_settings User Configuration Settings
@@ -52,10 +52,8 @@ extern UART_HandleTypeDef huart1;
  * @{
  */
 #define FRAME_SIZE 64                    ///< Communication frame size for LoRa/WQ (bytes)
-#define START_TH 50                      ///< Altitude threshold for launch detection (cm)
+#define START_TH 150                      ///< Altitude threshold for launch detection (cm)
 #define EJECT_TH 240                     ///< ADC threshold for ejection trigger (8-bit value)
-#define RS_ANGLE 30                      ///< Recovery system servo actuation angle (≤120°)
-#define RS_DELAY 3000                    ///< RS activation duration for testing (ms)
 /** @} */
 
 /** @} */ // End of user_settings group
@@ -144,5 +142,10 @@ void ImuGetAll(ImuData *imuData);
  * @note Used primarily for circular buffer difference calculations
  */
 uint32_t compare_uint32(const void *a, const void *b);
+
+/**
+ * @brief BN220 Initialization & NMEA setttings
+ */
+uint8_t BN220_Init(void);
 
 #endif /* INC_USER_H_ */
