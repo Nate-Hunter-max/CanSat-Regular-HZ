@@ -76,15 +76,13 @@ uint32_t compare_uint32(const void *a, const void *b) {
 }
 
 void Error(uint8_t errCode) {
-	while (1) {
 		for (uint8_t i = 0; i < errCode; i++) {
 			FlashLED(LED_ERR_Pin);
-			HAL_Delay(200);
+			HAL_Delay(50);
 			FlashLED(0);
-			HAL_Delay(200);
+			HAL_Delay(50);
 		}
-		HAL_Delay(500);
-	}
+		HAL_Delay(150);
 }
 
 void BN220_TryGet(GNGGA_Parser *gps_parser, ImuData *imuData) {

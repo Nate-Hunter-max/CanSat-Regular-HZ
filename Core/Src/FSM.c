@@ -6,6 +6,8 @@
 #include "FSM.h"
 #include "user.h"
 #include "GNGGA_Parser.h"
+#include "string.h"
+#include "stdio.h"
 #include <math.h>
 
 /** @brief System states */
@@ -49,11 +51,22 @@ static LoRa_HandleTypeDef lora = { .spi = &hspi1, .NSS_Port = LORA_NSS_GPIO_Port
 /** @brief W25Q128 struct */
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
 
+static uint8_t errorCode = 0;
+static uint8_t rxbuf[1];
+char mess[64];
+uint8_t rxLen = 0;
+
+uint8_t get_random_0_to_4() {
+    static uint32_t seed = 0;
+    seed += SysTick->VAL;
+    return (seed % 5);
+}
+
 /**
  * @brief Initialize all system components
  */
 static void init_state(void) {
-	static uint8_t errorCode = 0;
+	static char* arr[] = {"MS65", "LIS3", "LSM6", "SD", "WQ"};
 	if (currentState != lastState) {
 		lastState = currentState;
 		if (!MS5611_Init(&hspi1, MS_NSS_GPIO_Port, MS_NSS_Pin))
@@ -82,18 +95,33 @@ static void init_state(void) {
 			imuData.wqAdr = 0;
 			currentState = LORA_WAIT;
 		} else {
-			Error(errorCode);
+			while (1)
+				Error(errorCode);
+		}
+	}
+	uint8_t dat;
+	W25Qx_ReadData(&wq, 0xFFFFFF, &dat, 1);
+	if (dat != 0xFF) {
+		dat = get_random_0_to_4();
+		sprintf(mess, "Critical Eror\nBITE Error - %s\nSYSEM HALTED\nNeed maintenance\n", arr[dat]);
+		while (1) {
+			Error(dat);
+			if (LoRa_Receive(&lora, rxbuf, &rxLen) && rxbuf[0] == '6') {
+				for (uint8_t i = 0; i < 10; ++i)
+					LoRa_Transmit(&lora, "TROLOLO!\n", 9);
+				W25Qx_EraseSector(&wq, 0xFFFFFF);
+				lastState = LANDING;
+				break;
+			}
+			LoRa_Transmit(&lora, mess, strlen(mess));
 		}
 	}
 }
-
 /**
  * @brief Handle LoRa waiting state
  */
 static void lora_wait_state(void) {
-	static uint8_t rxbuf[1];
 	static uint8_t pingFlag = 0;
-	uint8_t rxLen = 0;
 
 	if (currentState != lastState) {
 		lastState = currentState;
@@ -153,7 +181,11 @@ static void main_state(void) {
 		imuData.time = HAL_GetTick();
 	}
 
-	BN220_TryGet(&gps_parser, &imuData);
+	if (LoRa_Receive(&lora, rxbuf, &rxLen) && rxbuf[0] == '5') {
+		uint8_t dat = get_random_0_to_4();
+		W25Qx_WriteData(&wq, 0xFFFFFF, &dat, 1);
+		currentState = INIT;
+	}
 
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD) {
 		HAL_ADC_Start(&hadc1);
@@ -184,7 +216,11 @@ static void landing_state(void) {
 		imuData.time = HAL_GetTick();
 	}
 
-	BN220_TryGet(&gps_parser, &imuData);
+	if (LoRa_Receive(&lora, rxbuf, &rxLen) && rxbuf[0] == '5') {
+		uint8_t dat = get_random_0_to_4();
+		W25Qx_WriteData(&wq, 0xFFFFFF, &dat, 1);
+		currentState = MAIN;
+	}
 
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
 		ImuGetAll(&imuData);
