@@ -96,7 +96,7 @@ static void init_state(void) {
 			currentState = LORA_WAIT;
 		} else {
 			while (1)
-				Error(errorCode);
+				Error(errorCode+1);
 		}
 	}
 	uint8_t dat;
