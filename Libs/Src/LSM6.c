@@ -47,11 +47,11 @@ uint8_t LSM6_Init(void *interface, void *port_or_addr, uint16_t pin_or_addr) {
 	_NSS_Port->ODR &= ~_NSS_Pin;
 	txbuf[0] = LSM6_CTRL3_C;
 	HAL_SPI_Transmit(spi, txbuf, 1, 1000);
-	txbuf[0] = (1 << 6); // BDU enable
+	txbuf[0] = (1 << 6) | 1; // BDU enable
 	HAL_SPI_Transmit(spi, txbuf, 1, 1000);
 	_NSS_Port->ODR |= _NSS_Pin;
 #else
-	txbuf[0] = (1 << 6);
+	txbuf[0] = (1 << 6) | 1;
 	HAL_I2C_Mem_Write(i2c, _i2c_addr, LSM6_CTRL3_C, I2C_MEMADD_SIZE_8BIT, txbuf, 1, 1000);
 #endif
 	return 1;

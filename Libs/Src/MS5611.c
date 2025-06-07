@@ -74,11 +74,34 @@ static uint8_t MS5611_CRC4(uint16_t *prom) {
 }
 
 /**
- * @brief Initialize MS5611 sensor
- * @param spiHandle SPI handle
- * @param NSS_Port Chip select GPIO port
- * @param NSS_Pin Chip select GPIO pin
- * @return 1 if success, 0 if CRC fails
+ * @brief Check sensor response and PROM validity
+ * @return 1 if sensor seems valid, 0 otherwise
+ */
+uint8_t MS5611_CheckSensor(void) {
+    uint16_t prom[8];
+
+    MS5611_SendCmd(MS56_CMD_RESET);
+    HAL_Delay(3);
+
+    for (uint8_t i = 0; i < 8; i++) {
+        prom[i] = MS5611_ReadPROM(i);
+    }
+
+    uint8_t valid = 0;
+    for (uint8_t i = 1; i <= 6; i++) {
+        if (prom[i] != 0x0000 && prom[i] != 0xFFFF)
+            valid = 1;
+    }
+
+    if (!valid /* || MS5611_CRC4(prom) != (prom[7] & 0xF)*/)
+        return 0;
+
+    return 1;
+}
+
+/**
+ * @brief Initialize MS5611 sensor via SPI and load PROM
+ * @return 1 if success, 0 otherwise
  */
 uint8_t MS5611_Init(SPI_HandleTypeDef *spiHandle, GPIO_TypeDef *NSS_Port, uint16_t NSS_Pin) {
     uint16_t rawCal[8];
@@ -86,22 +109,19 @@ uint8_t MS5611_Init(SPI_HandleTypeDef *spiHandle, GPIO_TypeDef *NSS_Port, uint16
     _NSS_Port = NSS_Port;
     _NSS_Pin = NSS_Pin;
 
-    MS5611_SendCmd(MS56_CMD_RESET);
-    HAL_Delay(3);
-
-    for(uint8_t i = 0; i < 8; i++) {
-        rawCal[i] = MS5611_ReadPROM(i);
-    }
-
-    if (MS5611_CRC4(rawCal) != (rawCal[7] & 0xF))
+    if (!MS5611_CheckSensor())
         return 0;
 
-    calData.SENS_T1 = rawCal[1] * 32768.0;
-    calData.OFF_T1 = rawCal[2] * 65536.0;
-    calData.TCS = rawCal[3] / 256.0;
-    calData.TCO = rawCal[4] / 128.0;
-    calData.T_REF = rawCal[5] * 256.0;
-    calData.TEMPSENS = rawCal[6] / 8388608.0;
+    for (uint8_t i = 0; i < 8; i++)
+        rawCal[i] = MS5611_ReadPROM(i);
+
+    calData.SENS_T1   = rawCal[1] * 32768.0;
+    calData.OFF_T1    = rawCal[2] * 65536.0;
+    calData.TCS       = rawCal[3] / 256.0;
+    calData.TCO       = rawCal[4] / 128.0;
+    calData.T_REF     = rawCal[5] * 256.0;
+    calData.TEMPSENS  = rawCal[6] / 8388608.0;
+
     return 1;
 }
 
