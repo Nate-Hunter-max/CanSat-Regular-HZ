@@ -41,7 +41,7 @@ uint8_t LSM6_Init(void *interface, void *port_or_addr, uint16_t pin_or_addr) {
 	_i2c_addr = pin_or_addr; // already shifted <<1
 	HAL_I2C_Mem_Read(i2c, _i2c_addr, LSM6_WHO_AM_I, I2C_MEMADD_SIZE_8BIT, txbuf, 1, 1000);
 #endif
-	if (*txbuf != 0x6A) return 0;
+	if ((*txbuf != 0x6A) && (*txbuf != 0x69)) return 0;
 
 #ifdef USE_SPI
 	_NSS_Port->ODR &= ~_NSS_Pin;
