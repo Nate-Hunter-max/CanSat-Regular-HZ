@@ -57,23 +57,6 @@ static void MS5611_GetADC(uint8_t cmd, uint32_t *res) {
 }
 
 /**
- * @brief CRC4 check from AN520 app note
- */
-static uint8_t MS5611_CRC4(uint16_t *prom) {
-    uint16_t n_rem = 0;
-    prom[7] &= 0xFF00;
-    for (int cnt = 0; cnt < 16; cnt++) {
-        if (cnt % 2 == 0) n_rem ^= (prom[cnt >> 1] >> 8);
-        else n_rem ^= (prom[cnt >> 1] & 0x00FF);
-        for (int n_bit = 8; n_bit > 0; n_bit--) {
-            if (n_rem & 0x8000) n_rem = (n_rem << 1) ^ 0x3000;
-            else n_rem <<= 1;
-        }
-    }
-    return (n_rem >> 12) & 0xF;
-}
-
-/**
  * @brief Check sensor response and PROM validity
  * @return 1 if sensor seems valid, 0 otherwise
  */

@@ -10,6 +10,7 @@
 #include "MicroSD.h"
 #include "W25Qx.h"
 #include "CircularBuffer.h"
+#include "telemetry_lora.h"
 
 /** @brief BN220 GPS settings (dumped from u-center)*/
 const uint8_t BN220_GpsSettings[] = { 0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB,
@@ -26,14 +27,14 @@ const uint8_t BN220_GpsSettings[] = { 0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 
 		0xB5, 0x62, 0x06, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0xD0, 0x08, 0x00, 0x00, 0x00, 0xC2, 0x01, 0x00, 0x07, 0x00,
 		0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x7E, 0xB5, 0x62, 0x06, 0x00, 0x01, 0x00, 0x01, 0x08, 0x22 };
 
-void StoreVectAbs(ImuData *dat) {
+void StoreVectAbs(TelemetryRaw *dat) {
 	dat->vectAbs = 0;
 	for (uint8_t i = 0; i < 3; i++)
 		dat->vectAbs += dat->accelData[i] * dat->accelData[i];
 	dat->vectAbs = sqrt(dat->vectAbs);
 }
-
-void ImuGetAll(ImuData *imuData) {
+	
+void ImuGetAll(TelemetryRaw *imuData) {
 	imuData->time = HAL_GetTick();
 	MS5611_Read(&imuData->temp, &imuData->press);
 	LIS3_Read(imuData->magData);
@@ -42,13 +43,14 @@ void ImuGetAll(ImuData *imuData) {
 	imuData->altitude = MS5611_GetAltitude(&imuData->press, &imuData->press0);
 }
 
-void ImuSaveAll(ImuData *imuData, LoRa_HandleTypeDef *lora, W25Qx_Device *wq) {
+void ImuSaveAll(TelemetryRaw *imuData, TelemetryPacket *tx, LoRa_Handle_t *lora, W25Qx_Device *wq) {
+	Telemetry_convertRawToPacket(imuData, tx);
+	LoRa_Transmit(lora, tx, sizeof(TelemetryPacket));
 	FlashLED(LED2_Pin);
-	LoRa_Transmit(lora, imuData, FRAME_SIZE);
-	W25Qx_WriteData(wq, imuData->wqAdr, imuData, FRAME_SIZE);
-	imuData->wqAdr += FRAME_SIZE;
+	W25Qx_WriteData(wq, imuData->wqAdr, tx, sizeof(TelemetryPacket));
+	imuData->wqAdr += sizeof(TelemetryPacket);
 	FlashLED(LED1_Pin);
-	if (microSD_Write(imuData, FRAME_SIZE, SD_FILENAME) != FR_OK) {
+	if (microSD_Write(tx, sizeof(TelemetryPacket), SD_FILENAME) != FR_OK) {
 		FlashLED(LED_ERR_Pin);
 		MX_FATFS_Init();
 		microSD_Init();
@@ -87,22 +89,24 @@ void Error(uint8_t errCode) {
 	}
 }
 
-void BN220_TryGet(GNGGA_Parser *gps_parser, ImuData *imuData) {
+void BN220_TryGet(GNGGA_Parser *gps_parser, TelemetryRaw *imuData) {
 	// Process the GPS data
 	GNGGA_Loop(gps_parser);
 
 	if (gps_parser->data.finish) {
-    // Convert latitude from degrees-minutes to decimal degrees
-    float lat_degrees = floor(fabs(gps_parser->data.latitude) / 100);
-    float lat_minutes = fabs(gps_parser->data.latitude) - (lat_degrees * 100);
-    imuData->lat = lat_degrees + (lat_minutes / 60.0f);
-    if (gps_parser->data.latitude < 0) imuData->lat *= -1;
+		// Convert latitude from degrees-minutes to decimal degrees
+		float lat_degrees = floor(fabs(gps_parser->data.latitude) / 100);
+		float lat_minutes = fabs(gps_parser->data.latitude) - (lat_degrees * 100);
+		imuData->lat = lat_degrees + (lat_minutes / 60.0f);
+		if (gps_parser->data.latitude < 0)
+			imuData->lat *= -1;
 
-    // Convert longitude from degrees-minutes to decimal degrees
-    float lon_degrees = floor(fabs(gps_parser->data.longitude) / 100);
-    float lon_minutes = fabs(gps_parser->data.longitude) - (lon_degrees * 100);
-    imuData->lon = lon_degrees + (lon_minutes / 60.0f);
-    if (gps_parser->data.longitude < 0) imuData->lon *= -1;
+		// Convert longitude from degrees-minutes to decimal degrees
+		float lon_degrees = floor(fabs(gps_parser->data.longitude) / 100);
+		float lon_minutes = fabs(gps_parser->data.longitude) - (lon_degrees * 100);
+		imuData->lon = lon_degrees + (lon_minutes / 60.0f);
+		if (gps_parser->data.longitude < 0)
+			imuData->lon *= -1;
 	}
 }
 

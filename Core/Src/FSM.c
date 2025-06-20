@@ -19,7 +19,10 @@ enum states {
 
 static enum states lastState = LANDING;
 static enum states currentState = INIT;
-ImuData imuData;
+TelemetryRaw imuData;
+TelemetryPacket txPack;
+uint8_t rxbuf[32];
+uint8_t rxlen;
 
 static CircularBuffer cbPress = { .item_size = sizeof(imuData.press), .size = PRESS_BUFFER_LEN };
 
@@ -27,7 +30,7 @@ GNGGA_Parser gps_parser;
 
 //@formatter:off
 /** @brief LoRa config*/
-static LoRaConfig loraCfg = {
+static LoRa_Config_t loraCfg = {
 		.frequency = 433,
 		.bandwidth = 0x08,
 		.spreadingFactor = 7,
@@ -36,15 +39,17 @@ static LoRaConfig loraCfg = {
 		.crcEnabled = 1,
 		.lowDataRateOptimize = 0,
 		.preambleLength = 6,
-		.payloadLength = 56,
+		.payloadLength = sizeof (TelemetryPacket),
 		.txAddr = 255,
 		.rxAddr = 0,
 		.txPower = 0x01
 };
+
+
 //@formatter:on
 
 /** @brief LoRa struct */
-static LoRa_HandleTypeDef lora = { .spi = &hspi1, .NSS_Port = LORA_NSS_GPIO_Port, .NSS_Pin = LORA_NSS_Pin, };
+static LoRa_Handle_t lora = { .spi = &hspi1, .nssPort = LORA_NSS_GPIO_Port, .nssPin = LORA_NSS_Pin, };
 
 /** @brief W25Q128 struct */
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
@@ -73,10 +78,15 @@ static void init_state(void) {
 
 		if (!errorCode) {
 			MS5611_SetOS(MS56_OSR_4096, MS56_OSR_4096);
+
 			LIS3_Config(LIS_CTRL1, LIS_MODE_HP | LIS_ODR_80);
 			LIS3_Config(LIS_CTRL2, LIS_SCALE_4);
 			LIS3_Config(LIS_CTRL3, LIS_CYCLIC);
+
+			LoRa_EnableDIO0Interrupt(&lora, 0); //Enable RX_Done Interrupt
+
 			LSM6_ConfigAG(LSM6_ACCEL_16G | LSM6_CFG_12_5_Hz, LSM6_GYRO_2000DPS | LSM6_CFG_12_5_Hz);
+
 			CB_Init(&cbPress);
 			GNGGA_Init(&gps_parser, &huart6);
 			imuData.wqAdr = 0;
@@ -91,9 +101,7 @@ static void init_state(void) {
  * @brief Handle LoRa waiting state
  */
 static void lora_wait_state(void) {
-	static uint8_t rxbuf[1];
 	static uint8_t pingFlag = 0;
-	uint8_t rxLen = 0;
 
 	if (currentState != lastState) {
 		lastState = currentState;
@@ -109,7 +117,8 @@ static void lora_wait_state(void) {
 	else
 		FlashLED(0);
 
-	if (LoRa_Receive(&lora, rxbuf, &rxLen)) {
+	if (rxlen > 0) {
+		rxlen = 0;
 		if (rxbuf[0] == '0') {
 			pingFlag = 1;
 			LoRa_Transmit(&lora, "Ping OK\n", 8);
@@ -171,7 +180,7 @@ static void main_state(void) {
 				currentState = LANDING;
 			}
 		}
-		ImuSaveAll(&imuData, &lora, &wq);
+		ImuSaveAll(&imuData, &txPack, &lora, &wq);
 	}
 }
 
@@ -188,7 +197,7 @@ static void landing_state(void) {
 
 	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
 		ImuGetAll(&imuData);
-		ImuSaveAll(&imuData, &lora, &wq);
+		ImuSaveAll(&imuData, &txPack, &lora, &wq);
 	}
 }
 
@@ -200,15 +209,15 @@ static void dump_state(void) {
 		lastState = currentState;
 	}
 
-	uint8_t buf[FRAME_SIZE];
-	for (uint32_t addr = 0; addr < 0xFFFFFF; addr += FRAME_SIZE) {
+	uint8_t buf[sizeof(TelemetryPacket)];
+	for (uint32_t addr = 0; addr < 0xFFFFFF; addr += sizeof(TelemetryPacket)) {
 		FlashLED(LED2_Pin);
-		W25Qx_ReadData(&wq, addr, buf, FRAME_SIZE);
+		W25Qx_ReadData(&wq, addr, buf, sizeof(TelemetryPacket));
 		if (buf[0] == 0xFF && buf[1] == 0xFF && buf[2] == 0xFF && buf[3] == 0xFF)
 			break;
-		LoRa_Transmit(&lora, buf, FRAME_SIZE);
+		LoRa_Transmit(&lora, buf, sizeof(TelemetryPacket));
 		FlashLED(LED1_Pin);
-		if (microSD_Write(buf, FRAME_SIZE, SD_FILENAME_WQ) != FR_OK) {
+		if (microSD_Write(buf, sizeof(TelemetryPacket), SD_FILENAME_WQ) != FR_OK) {
 			FlashLED(LED_ERR_Pin);
 			HAL_Delay(1000);
 		}
@@ -244,9 +253,24 @@ void FSM_Update(void) {
 	}
 }
 
+/**
+ * @brief override weak UART callback
+ */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if (huart == &huart6) {
 		GNGGA_UART_IRQHandler(&gps_parser);
 	}
 }
 
+/**
+ * @brief override weak EXTI callback
+ *
+ * @note handle PC5 (LoRa RXDone)
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	switch (GPIO_Pin) {
+		case GPIO_PIN_5:
+			LoRa_Receive(&lora, rxbuf, &rxlen);
+			break;
+	}
+}

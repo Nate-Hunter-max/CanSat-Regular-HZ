@@ -82,6 +82,9 @@ void Error_Handler(void);
 #define SDIO_CD_GPIO_Port GPIOB
 #define JMP_PROG_Pin GPIO_PIN_12
 #define JMP_PROG_GPIO_Port GPIOB
+#define LORA_DIO0_Pin GPIO_PIN_15
+#define LORA_DIO0_GPIO_Port GPIOB
+#define LORA_DIO0_EXTI_IRQn EXTI15_10_IRQn
 #define ADC_NSS_Pin GPIO_PIN_9
 #define ADC_NSS_GPIO_Port GPIOB
 
