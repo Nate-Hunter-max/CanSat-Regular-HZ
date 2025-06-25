@@ -13,7 +13,7 @@
 #include "main.h"
 #include "MS5611.h"
 #include "LIS3.h"
-#include "LSM6.h"
+#include "lsm6ds3.h"
 #include "LoRa.h"
 #include "MicroSD.h"
 #include "W25Qx.h"
@@ -78,6 +78,13 @@ extern UART_HandleTypeDef huart6;
  * @param bit Bit position to set (0-based)
  */
 #define bitSet(value, bit) ((value) |= (1 << (bit)))
+
+/**
+ * @brief Resets (clears) a specific bit in a value
+ * @param value Target value to modify
+ * @param bit Bit position to reset (0-based)
+ */
+#define bitReset(value, bit) ((value) &= ~(1 << (bit)))
 
 /** @} */ // End of bit_operations group
 

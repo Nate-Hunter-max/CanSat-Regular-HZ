@@ -55,6 +55,10 @@ static LoRa_Handle_t lora = { .spi = &hspi1, .nssPort = LORA_NSS_GPIO_Port, .nss
 /** @brief W25Q128 struct */
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
 
+/** @brief LSM6 struct */
+LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = LSM_NSS_Pin,
+		.accelODR = LSM6DS3_ODR_12HZ5, .gyroODR = LSM6DS3_ODR_12HZ5, .timeout = 100 };
+
 /**
  * @brief Initialize all system components
  */
@@ -66,7 +70,7 @@ static void init_state(void) {
 			errorCode = 1;
 		if (!LIS3_Init(&hspi1, LIS_NSS_GPIO_Port, LIS_NSS_Pin))
 			errorCode = 2;
-		if (!LSM6_Init(&hspi1, LSM_NSS_GPIO_Port, LSM_NSS_Pin))
+		if (!LSM6DS3_Init(&lsm6, LSM6DS3_XL_16G, LSM6DS3_GYRO_2000DPS))
 			errorCode = 3;
 		if (!LoRa_Init(&lora))
 			errorCode = 4;
@@ -86,8 +90,6 @@ static void init_state(void) {
 
 			LoRa_EnableDIO0Interrupt(&lora, 0); //Enable RX_Done Interrupt
 
-			LSM6_ConfigAG(LSM6_ACCEL_16G | LSM6_CFG_12_5_Hz, LSM6_GYRO_2000DPS | LSM6_CFG_12_5_Hz);
-
 			CB_Init(&cbPress);
 			GNGGA_Init(&gps_parser, &huart6);
 			imuData.wqAdr = 0;
@@ -102,13 +104,12 @@ static void init_state(void) {
  * @brief Handle LoRa waiting state
  */
 static void lora_wait_state(void) {
-	static uint8_t pingFlag = 0;
-
 	if (currentState != lastState) {
 		lastState = currentState;
+		MS5611_Read(&imuData.temp, &imuData.press0);
 	}
 
-	if (!pingFlag) {
+	if (!bitRead(imuData.flags, 4)) {
 		if (HAL_GetTick() % 300 > 150)
 			FlashLED(LED1_Pin);
 		else
@@ -120,31 +121,43 @@ static void lora_wait_state(void) {
 
 	if (rxlen > 0) {
 		rxlen = 0;
+		bitSet(imuData.flags, 3); // Command
+		bitSet(imuData.flags, 5); // OK
+
 		if (rxbuf[0] == '0') {
-			pingFlag = 1;
-			LoRa_Transmit(&lora, "Ping OK\n", 8);
+			bitSet(imuData.flags, 4); // Ping
+			ImuGetAll(&imuData);
+			ImuSaveAll(&imuData, &txPack, &lora, &wq);
+			return;
 		}
-		if (pingFlag) {
+
+		if (bitRead(imuData.flags, 4)) {
 			switch (rxbuf[0]) {
 				case '1':
-					LoRa_Transmit(&lora, "Starting\n", 9);
 					currentState = MAIN;
 					break;
 				case '2':
 					currentState = DUMP;
-					LoRa_Transmit(&lora, "Memory dump\n", 12);
 					break;
 				case '3':
-					LoRa_Transmit(&lora, "Erase All\n", 10);
+					bitSet(imuData.flags, 6); // Wait
+					bitReset(imuData.flags, 5); // not OK
+					ImuGetAll(&imuData);
+					ImuSaveAll(&imuData, &txPack, &lora, &wq);
 					W25Qx_EraseChip(&wq);
 					microSD_RemoveFile(SD_FILENAME);
 					microSD_RemoveFile(SD_FILENAME_WQ);
-					LoRa_Transmit(&lora, "Done\n", 5);
+					bitReset(imuData.flags, 6); // not Wait
+					bitSet(imuData.flags, 5); // OK
 					break;
 				default:
+					bitReset(imuData.flags, 5); // not OK
 					break;
 			}
 		}
+		ImuGetAll(&imuData);
+		ImuSaveAll(&imuData, &txPack, &lora, &wq);
+		bitReset(imuData.flags, 3); // not CMD
 	}
 }
 

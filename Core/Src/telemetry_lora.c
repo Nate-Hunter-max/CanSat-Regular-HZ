@@ -39,12 +39,12 @@ static uint32_t clampUnsigned(uint32_t val, uint8_t bits) {
 void Telemetry_convertRawToPacket(const TelemetryRaw *in, TelemetryPacket *out) {
 	out->time_ms = clampUnsigned(in->time, 24);
 	out->temp_cC = clampSigned(in->temp / 10, 14); // from x100 to x10
-	out->pressPa = clampUnsigned((in->press > 100000) ? in->press - 100000 : 0, 16);
+	out->pressPa = clampUnsigned((in->press > 60000) ? in->press - 60000 : 0, 16);
 
 	for (int i = 0; i < 3; ++i) {
 		out->mag[i] = clampSigned((int32_t) roundf(in->magData[i]), 14);
-		out->accel[i] = clampSigned((int32_t) roundf(in->accelData[i]), 15);
-		out->gyro[i] = clampSigned((int32_t) roundf(in->gyroData[i] / 100.0f), 16);
+		out->accel[i] = clampSigned((int32_t) roundf(in->accelData[i]*1000), 15);
+		out->gyro[i] = clampSigned((int32_t) roundf(in->gyroData[i]*10), 16);
 	}
 
 	out->altitude_cm = clampSigned(in->altitude, 20);
