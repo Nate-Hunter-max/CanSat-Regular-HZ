@@ -5,7 +5,7 @@
 
 #include "LSM6.h"
 
-#ifdef USE_SPI
+#ifdef LSM6_USE_SPI
 static SPI_HandleTypeDef *spi;
 static GPIO_TypeDef *_NSS_Port;
 static uint16_t _NSS_Pin;
@@ -27,7 +27,7 @@ static uint8_t txbuf[1];
  * @return uint8_t 1 on success, 0 on error.
  */
 uint8_t LSM6_Init(void *interface, void *port_or_addr, uint16_t pin_or_addr) {
-#ifdef USE_SPI
+#ifdef LSM6_USE_SPI
 	spi = (SPI_HandleTypeDef*)interface;
 	_NSS_Port = (GPIO_TypeDef*)port_or_addr;
 	_NSS_Pin = pin_or_addr;
@@ -43,7 +43,7 @@ uint8_t LSM6_Init(void *interface, void *port_or_addr, uint16_t pin_or_addr) {
 #endif
 	if ((*txbuf != 0x6A) && (*txbuf != 0x69)) return 0;
 
-#ifdef USE_SPI
+#ifdef LSM6_USE_SPI
 	_NSS_Port->ODR &= ~_NSS_Pin;
 	txbuf[0] = LSM6_CTRL3_C;
 	HAL_SPI_Transmit(spi, txbuf, 1, 1000);
@@ -64,7 +64,7 @@ uint8_t LSM6_Init(void *interface, void *port_or_addr, uint16_t pin_or_addr) {
  * @param G_CFG Gyroscope config byte (ODR | FS)
  */
 void LSM6_ConfigAG(uint8_t A_CFG, uint8_t G_CFG) {
-#ifdef USE_SPI
+#ifdef LSM6_USE_SPI
 	_NSS_Port->ODR &= ~_NSS_Pin;
 	txbuf[0] = LSM6_CTRL1_XL;
 	HAL_SPI_Transmit(spi, txbuf, 1, 1000);
@@ -89,7 +89,7 @@ void LSM6_ConfigAG(uint8_t A_CFG, uint8_t G_CFG) {
  */
 void LSM6_Read(float *accel, float *gyro) {
 	int16_t raw[6];
-#ifdef USE_SPI
+#ifdef LSM6_USE_SPI
 	_NSS_Port->ODR &= ~_NSS_Pin;
 	txbuf[0] = LSM6_READ_BIT | LSM6_OUTX_L_G;
 	HAL_SPI_Transmit(spi, txbuf, 1, 1000);

@@ -1,6 +1,9 @@
 /**
  * @file FSM.c
  * @brief Implementation of the Finite State Machine for the flight controller
+ * @author Nate Hunter
+ * @date 2025-06-25
+ * @version v1.1.0
  */
 
 #include "FSM.h"
@@ -44,8 +47,6 @@ static LoRa_Config_t loraCfg = {
 		.rxAddr = 0,
 		.txPower = 0x01
 };
-
-
 //@formatter:on
 
 /** @brief LoRa struct */
@@ -265,11 +266,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 /**
  * @brief override weak EXTI callback
  *
- * @note handle PC5 (LoRa RXDone)
+ * @note handle PB15 (LoRa RXDone)
  */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	switch (GPIO_Pin) {
-		case GPIO_PIN_5:
+		case LORA_DIO0_Pin:
 			LoRa_Receive(&lora, rxbuf, &rxlen);
 			break;
 	}
