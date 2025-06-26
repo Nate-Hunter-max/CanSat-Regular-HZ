@@ -1,6 +1,9 @@
 /**
  * @file user.c
  * @brief User configuration and utility functions for CanSat-Regular-HZ
+ * @author Nate Hunter
+ * @date 2025-06-26
+ * @version 1.1.0
  */
 #include "user.h"
 #include "MS5611.h"
@@ -36,21 +39,21 @@ void StoreVectAbs(TelemetryRaw *dat) {
 	dat->vectAbs = sqrt(dat->vectAbs);
 }
 	
-void ImuGetAll(TelemetryRaw *imuData) {
-	imuData->time = HAL_GetTick();
-	MS5611_Read(&imuData->temp, &imuData->press);
-	LIS3_Read(imuData->magData);
-	LSM6DS3_ReadData(&lsm6, imuData->accelData, imuData->gyroData);
-	StoreVectAbs(imuData);
-	imuData->altitude = MS5611_GetAltitude(&imuData->press, &imuData->press0);
+void ImuGetAll(TelemetryRaw *rawData) {
+	rawData->time = HAL_GetTick();
+	MS5611_Read(&rawData->temp, &rawData->press);
+	LIS3_Read(rawData->magData);
+	LSM6DS3_ReadData(&lsm6, rawData->accelData, rawData->gyroData);
+	StoreVectAbs(rawData);
+	rawData->altitude = MS5611_GetAltitude(&rawData->press, &rawData->press0);
 }
 
-void ImuSaveAll(TelemetryRaw *imuData, TelemetryPacket *tx, LoRa_Handle_t *lora, W25Qx_Device *wq) {
-	Telemetry_convertRawToPacket(imuData, tx);
+void ImuSaveAll(TelemetryRaw *rawData, TelemetryPacket *tx, LoRa_Handle_t *lora, W25Qx_Device *wq) {
+	Telemetry_convertRawToPacket(rawData, tx);
 	LoRa_Transmit(lora, tx, sizeof(TelemetryPacket));
 	FlashLED(LED2_Pin);
-	W25Qx_WriteData(wq, imuData->wqAdr, tx, sizeof(TelemetryPacket));
-	imuData->wqAdr += sizeof(TelemetryPacket);
+	W25Qx_WriteData(wq, rawData->wqAdr, tx, sizeof(TelemetryPacket));
+	rawData->wqAdr += sizeof(TelemetryPacket);
 	FlashLED(LED1_Pin);
 	if (microSD_Write(tx, sizeof(TelemetryPacket), SD_FILENAME) != FR_OK) {
 		FlashLED(LED_ERR_Pin);
@@ -91,7 +94,7 @@ void Error(uint8_t errCode) {
 	}
 }
 
-void BN220_TryGet(GNGGA_Parser *gps_parser, TelemetryRaw *imuData) {
+void BN220_TryGet(GNGGA_Parser *gps_parser, TelemetryRaw *rawData) {
 	// Process the GPS data
 	GNGGA_Loop(gps_parser);
 
@@ -99,16 +102,16 @@ void BN220_TryGet(GNGGA_Parser *gps_parser, TelemetryRaw *imuData) {
 		// Convert latitude from degrees-minutes to decimal degrees
 		float lat_degrees = floor(fabs(gps_parser->data.latitude) / 100);
 		float lat_minutes = fabs(gps_parser->data.latitude) - (lat_degrees * 100);
-		imuData->lat = lat_degrees + (lat_minutes / 60.0f);
+		rawData->lat = lat_degrees + (lat_minutes / 60.0f);
 		if (gps_parser->data.latitude < 0)
-			imuData->lat *= -1;
+			rawData->lat *= -1;
 
 		// Convert longitude from degrees-minutes to decimal degrees
 		float lon_degrees = floor(fabs(gps_parser->data.longitude) / 100);
 		float lon_minutes = fabs(gps_parser->data.longitude) - (lon_degrees * 100);
-		imuData->lon = lon_degrees + (lon_minutes / 60.0f);
+		rawData->lon = lon_degrees + (lon_minutes / 60.0f);
 		if (gps_parser->data.longitude < 0)
-			imuData->lon *= -1;
+			rawData->lon *= -1;
 	}
 }
 

@@ -1,10 +1,9 @@
 /**
  * @file user.h
  * @brief User configuration and utility functions for CanSat-Regular-HZ
- *
- * @author [Nate Hunter]
- * @date [10.05.2025]
- * @version 1.0
+ * @author Nate Hunter
+ * @date 2025-06-26
+ * @version 1.1.0
  */
 
 #ifndef INC_USER_H_
@@ -113,19 +112,19 @@ void StoreVectAbs(TelemetryRaw *dat);
 
 /**
  * @brief Save complete IMU dataset to persistent storage
- * @param imuData Pointer to IMU data structure
+ * @param rawData Pointer to IMU data structure
  * @param tx Pointer to tx frame structure
  * @param lora Pointer to LoRa device
  * @param wq Pointer to W25Qx flash
  */
-void ImuSaveAll(TelemetryRaw *imuData, TelemetryPacket *tx, LoRa_Handle_t* lora, W25Qx_Device* wq);
+void ImuSaveAll(TelemetryRaw *rawData, TelemetryPacket *tx, LoRa_Handle_t* lora, W25Qx_Device* wq);
 
 /**
  * @brief Retrieve complete IMU dataset from storage
- * @param imuData Pointer to IMU data structure for population
- * @return void Data is returned via the imuData parameter
+ * @param rawData Pointer to IMU data structure for population
+ * @return void Data is returned via the rawData parameter
  */
-void ImuGetAll(TelemetryRaw *imuData);
+void ImuGetAll(TelemetryRaw *rawData);
 
 /**
  * @brief Compare two uint32_t values and return absolute difference
@@ -149,8 +148,8 @@ uint8_t BN220_Init(void);
  * The converted values are stored in the provided IMU data structure.
  *
  * @param gps_parser Pointer to the GNGGA_Parser structure containing raw GPS data
- * @param imuData Pointer to the IMU data structure where converted coordinates will be stored
+ * @param rawData Pointer to the IMU data structure where converted coordinates will be stored
  */
-void BN220_TryGet(GNGGA_Parser* gps_parser, TelemetryRaw* imuData);
+void BN220_TryGet(GNGGA_Parser* gps_parser, TelemetryRaw* rawData);
 
 #endif /* INC_USER_H_ */

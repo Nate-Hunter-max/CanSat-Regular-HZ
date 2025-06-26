@@ -3,7 +3,7 @@
  * @brief Implementation of the Finite State Machine for the flight controller
  * @author Nate Hunter
  * @date 2025-06-25
- * @version v1.1.0
+ * @version v1.2.0
  */
 
 #include "FSM.h"
@@ -19,17 +19,6 @@ enum states {
 	LANDING,    ///< Landing state
 	DUMP        ///< Memory dump state
 };
-
-static enum states lastState = LANDING;
-static enum states currentState = INIT;
-TelemetryRaw imuData;
-TelemetryPacket txPack;
-uint8_t rxbuf[32];
-uint8_t rxlen;
-
-static CircularBuffer cbPress = { .item_size = sizeof(imuData.press), .size = PRESS_BUFFER_LEN };
-
-GNGGA_Parser gps_parser;
 
 //@formatter:off
 /** @brief LoRa config*/
@@ -49,6 +38,18 @@ static LoRa_Config_t loraCfg = {
 };
 //@formatter:on
 
+static enum states lastState = LANDING;
+static enum states currentState = INIT;
+TelemetryRaw rawData;
+TelemetryPacket txPack;
+uint8_t rxbuf[32];
+uint8_t rxlen;
+
+static CircularBuffer cbPress = { .item_size = sizeof(rawData.press), .size = PRESS_BUFFER_LEN };
+
+/** @brief Parser for BN220 */
+GNGGA_Parser gps_parser;
+
 /** @brief LoRa struct */
 static LoRa_Handle_t lora = { .spi = &hspi1, .nssPort = LORA_NSS_GPIO_Port, .nssPin = LORA_NSS_Pin, };
 
@@ -56,8 +57,8 @@ static LoRa_Handle_t lora = { .spi = &hspi1, .nssPort = LORA_NSS_GPIO_Port, .nss
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
 
 /** @brief LSM6 struct */
-LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = LSM_NSS_Pin,
-		.accelODR = LSM6DS3_ODR_12HZ5, .gyroODR = LSM6DS3_ODR_12HZ5, .timeout = 100 };
+LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = LSM_NSS_Pin, .accelODR = LSM6DS3_ODR_12HZ5,
+		.gyroODR = LSM6DS3_ODR_12HZ5, .timeout = 100 };
 
 /**
  * @brief Initialize all system components
@@ -92,7 +93,7 @@ static void init_state(void) {
 
 			CB_Init(&cbPress);
 			GNGGA_Init(&gps_parser, &huart6);
-			imuData.wqAdr = 0;
+			rawData.wqAdr = 0;
 			currentState = LORA_WAIT;
 		} else {
 			Error(errorCode);
@@ -106,10 +107,10 @@ static void init_state(void) {
 static void lora_wait_state(void) {
 	if (currentState != lastState) {
 		lastState = currentState;
-		MS5611_Read(&imuData.temp, &imuData.press0);
+		MS5611_Read(&rawData.temp, &rawData.press0);
 	}
 
-	if (!bitRead(imuData.flags, 4)) {
+	if (rawData.flags.ping) {
 		if (HAL_GetTick() % 300 > 150)
 			FlashLED(LED1_Pin);
 		else
@@ -121,17 +122,17 @@ static void lora_wait_state(void) {
 
 	if (rxlen > 0) {
 		rxlen = 0;
-		bitSet(imuData.flags, 3); // Command
-		bitSet(imuData.flags, 5); // OK
+		rawData.flags.command = 1;
+		rawData.flags.ok = 1;
 
 		if (rxbuf[0] == '0') {
-			bitSet(imuData.flags, 4); // Ping
-			ImuGetAll(&imuData);
-			ImuSaveAll(&imuData, &txPack, &lora, &wq);
+			rawData.flags.ping = 1;
+			ImuGetAll(&rawData);
+			ImuSaveAll(&rawData, &txPack, &lora, &wq);
 			return;
 		}
 
-		if (bitRead(imuData.flags, 4)) {
+		if (rawData.flags.ping) {
 			switch (rxbuf[0]) {
 				case '1':
 					currentState = MAIN;
@@ -140,24 +141,24 @@ static void lora_wait_state(void) {
 					currentState = DUMP;
 					break;
 				case '3':
-					bitSet(imuData.flags, 6); // Wait
-					bitReset(imuData.flags, 5); // not OK
-					ImuGetAll(&imuData);
-					ImuSaveAll(&imuData, &txPack, &lora, &wq);
+					rawData.flags.wait = 1;
+					rawData.flags.ok = 0;
+					ImuGetAll(&rawData);
+					ImuSaveAll(&rawData, &txPack, &lora, &wq);
 					W25Qx_EraseChip(&wq);
 					microSD_RemoveFile(SD_FILENAME);
 					microSD_RemoveFile(SD_FILENAME_WQ);
-					bitReset(imuData.flags, 6); // not Wait
-					bitSet(imuData.flags, 5); // OK
+					rawData.flags.wait = 0;
+					rawData.flags.ok = 1;
 					break;
 				default:
-					bitReset(imuData.flags, 5); // not OK
+					rawData.flags.ok = 0;
 					break;
 			}
 		}
-		ImuGetAll(&imuData);
-		ImuSaveAll(&imuData, &txPack, &lora, &wq);
-		bitReset(imuData.flags, 3); // not CMD
+		ImuGetAll(&rawData);
+		ImuSaveAll(&rawData, &txPack, &lora, &wq);
+		rawData.flags.command = 0;
 	}
 }
 
@@ -168,33 +169,34 @@ static void main_state(void) {
 	if (currentState != lastState) {
 		lastState = currentState;
 		for (uint8_t i = 0; i < 10; i++) {
-			MS5611_Read(&imuData.temp, &imuData.press0);
+			MS5611_Read(&rawData.temp, &rawData.press0);
 			HAL_Delay(50);
 		}
-		MS5611_Read(&imuData.temp, &imuData.press0);
-		StoreVectAbs(&imuData);
-		imuData.time = HAL_GetTick();
+		MS5611_Read(&rawData.temp, &rawData.press0);
+		StoreVectAbs(&rawData);
+		rawData.time = HAL_GetTick();
 	}
 
-	BN220_TryGet(&gps_parser, &imuData);
+	BN220_TryGet(&gps_parser, &rawData);
 
-	if (HAL_GetTick() - imuData.time >= DATA_PERIOD) {
+	if (HAL_GetTick() - rawData.time >= DATA_PERIOD) {
 		HAL_ADC_Start(&hadc1);
-		ImuGetAll(&imuData);
+		ImuGetAll(&rawData);
 
-		if (imuData.altitude > START_TH)
-			bitSet(imuData.flags, 0);
-		if (bitRead(imuData.flags, 0) && ADC1->DR < EJECT_TH)
-			bitSet(imuData.flags, 1);
+		if (rawData.altitude > START_TH)
+			rawData.flags.start = 1;
 
-		if (bitRead(imuData.flags, 1)) {
-			CB_Push(&cbPress, &imuData.press);
+		if (rawData.flags.start && ADC1->DR < EJECT_TH)
+			rawData.flags.eject = 1;
+
+		if (rawData.flags.eject) {
+			CB_Push(&cbPress, &rawData.press);
 			if (CB_Diff(&cbPress, compare_uint32) < PRESS_LAND_DELTA) {
-				bitSet(imuData.flags, 2);
+				rawData.flags.land = 1;
 				currentState = LANDING;
 			}
 		}
-		ImuSaveAll(&imuData, &txPack, &lora, &wq);
+		ImuSaveAll(&rawData, &txPack, &lora, &wq);
 	}
 }
 
@@ -204,14 +206,14 @@ static void main_state(void) {
 static void landing_state(void) {
 	if (currentState != lastState) {
 		lastState = currentState;
-		imuData.time = HAL_GetTick();
+		rawData.time = HAL_GetTick();
 	}
 
-	BN220_TryGet(&gps_parser, &imuData);
+	BN220_TryGet(&gps_parser, &rawData);
 
-	if (HAL_GetTick() - imuData.time >= DATA_PERIOD_LND) {
-		ImuGetAll(&imuData);
-		ImuSaveAll(&imuData, &txPack, &lora, &wq);
+	if (HAL_GetTick() - rawData.time >= DATA_PERIOD_LND) {
+		ImuGetAll(&rawData);
+		ImuSaveAll(&rawData, &txPack, &lora, &wq);
 	}
 }
 
