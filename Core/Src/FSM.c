@@ -62,7 +62,7 @@ LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = L
 
 /** @brief LIS3 struct */
 LIS3MDL_Device lis3 = { .spi = &hspi1, .cs_port = LIS_NSS_GPIO_Port, .cs_pin = LIS_NSS_Pin, .output_data_rate = LIS3_ODR_20_HZ,
-		.timeout = 100 };
+		.timeout = 100, .scale = LIS3_SCALE_16_GAUSS };
 /**
  * @brief Initialize all system components
  */

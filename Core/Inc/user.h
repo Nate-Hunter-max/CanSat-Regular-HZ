@@ -42,7 +42,7 @@ extern UART_HandleTypeDef huart6;
 #define SD_FILENAME_WQ "gg.wq"           ///< microSD dump filename for diagnostics (BIN format)
 #define DATA_PERIOD 50                   ///< Main data update period in milliseconds
 #define DATA_PERIOD_LND 85               ///< Post-landing data update period in milliseconds
-#define PRESS_BUFFER_LEN 15              ///< Circular buffer size for landing detection
+#define PRESS_BUFFER_LEN 64              ///< Circular buffer size for landing detection
 #define PRESS_LAND_DELTA 10              ///< Max pressure variation for landing detection (Pa)
 /** @} */
 
