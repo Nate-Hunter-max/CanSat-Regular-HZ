@@ -33,7 +33,7 @@ typedef struct {
 	uint32_t time;          ///< Milliseconds from start
 	int32_t temp;           ///< MS56 temperature (centigrade*10e2)
 	uint32_t press;         ///< MS56 pressure (Pa)
-	float magData[3];       ///< LIS3 mag (mG)
+	float magData[3];       ///< LIS3 mag (G)
 	float accelData[3];     ///< LSM6 accel (mG)
 	float gyroData[3];      ///< LSM6 gyro (dps*10)
 	int32_t altitude;       ///< Altitude (zero at start, cm)

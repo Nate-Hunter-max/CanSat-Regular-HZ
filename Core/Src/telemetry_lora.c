@@ -42,7 +42,7 @@ void Telemetry_convertRawToPacket(const TelemetryRaw *in, TelemetryPacket *out) 
 	out->pressPa = clampUnsigned((in->press > 60000) ? in->press - 60000 : 0, 16);
 
 	for (int i = 0; i < 3; ++i) {
-		out->mag[i] = clampSigned((int32_t) roundf(in->magData[i]), 14);
+		out->mag[i] = clampSigned((int32_t) roundf(in->magData[i]*1000), 14);
 		out->accel[i] = clampSigned((int32_t) roundf(in->accelData[i]*1000), 15);
 		out->gyro[i] = clampSigned((int32_t) roundf(in->gyroData[i]*10), 16);
 	}

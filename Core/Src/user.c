@@ -7,7 +7,7 @@
  */
 #include "user.h"
 #include "MS5611.h"
-#include "LIS3.h"
+#include "lis3mdl.h"
 #include "lsm6ds3.h"
 #include "LoRa.h"
 #include "MicroSD.h"
@@ -16,6 +16,7 @@
 #include "telemetry_lora.h"
 
 extern LSM6DS3_Handle lsm6;
+extern LIS3MDL_Device lis3;
 
 /** @brief BN220 GPS settings (dumped from u-center)*/
 const uint8_t BN220_GpsSettings[] = { 0xB5, 0x62, 0x06, 0x01, 0x03, 0x00, 0xF0, 0x01, 0x00, 0xFB,
@@ -38,11 +39,11 @@ void StoreVectAbs(TelemetryRaw *dat) {
 		dat->vectAbs += dat->accelData[i] * dat->accelData[i];
 	dat->vectAbs = sqrt(dat->vectAbs);
 }
-	
+
 void ImuGetAll(TelemetryRaw *rawData) {
 	rawData->time = HAL_GetTick();
 	MS5611_Read(&rawData->temp, &rawData->press);
-	LIS3_Read(rawData->magData);
+	LIS3MDL_ReadData(&lis3, rawData->magData, NULL);
 	LSM6DS3_ReadData(&lsm6, rawData->accelData, rawData->gyroData);
 	StoreVectAbs(rawData);
 	rawData->altitude = MS5611_GetAltitude(&rawData->press, &rawData->press0);

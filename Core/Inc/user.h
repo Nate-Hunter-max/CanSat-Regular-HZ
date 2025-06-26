@@ -11,7 +11,7 @@
 
 #include "main.h"
 #include "MS5611.h"
-#include "LIS3.h"
+#include "lis3mdl.h"
 #include "lsm6ds3.h"
 #include "LoRa.h"
 #include "MicroSD.h"

@@ -57,9 +57,12 @@ static LoRa_Handle_t lora = { .spi = &hspi1, .nssPort = LORA_NSS_GPIO_Port, .nss
 static W25Qx_Device wq = { .spi = &hspi1, .cs_port = WQ_NSS_GPIO_Port, .cs_pin = WQ_NSS_Pin, .capacity = 16777216 };
 
 /** @brief LSM6 struct */
-LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = LSM_NSS_Pin, .accelODR = LSM6DS3_ODR_12HZ5,
+LSM6DS3_Handle lsm6 = { .spi = &hspi1, .cs_port = LSM_NSS_GPIO_Port, .cs_pin = LSM_NSS_Pin, .accelODR = LSM6DS3_ODR_26HZ,
 		.gyroODR = LSM6DS3_ODR_12HZ5, .timeout = 100 };
 
+/** @brief LIS3 struct */
+LIS3MDL_Device lis3 = { .spi = &hspi1, .cs_port = LIS_NSS_GPIO_Port, .cs_pin = LIS_NSS_Pin, .output_data_rate = LIS3_ODR_20_HZ,
+		.timeout = 100 };
 /**
  * @brief Initialize all system components
  */
@@ -69,7 +72,7 @@ static void init_state(void) {
 		lastState = currentState;
 		if (!MS5611_Init(&hspi1, MS_NSS_GPIO_Port, MS_NSS_Pin))
 			errorCode = 1;
-		if (!LIS3_Init(&hspi1, LIS_NSS_GPIO_Port, LIS_NSS_Pin))
+		if(!LIS3MDL_Init(&lis3))
 			errorCode = 2;
 		if (!LSM6DS3_Init(&lsm6, LSM6DS3_XL_16G, LSM6DS3_GYRO_2000DPS))
 			errorCode = 3;
@@ -84,10 +87,6 @@ static void init_state(void) {
 
 		if (!errorCode) {
 			MS5611_SetOS(MS56_OSR_4096, MS56_OSR_4096);
-
-			LIS3_Config(LIS_CTRL1, LIS_MODE_HP | LIS_ODR_80);
-			LIS3_Config(LIS_CTRL2, LIS_SCALE_4);
-			LIS3_Config(LIS_CTRL3, LIS_CYCLIC);
 
 			LoRa_EnableDIO0Interrupt(&lora, 0); //Enable RX_Done Interrupt
 
@@ -110,7 +109,7 @@ static void lora_wait_state(void) {
 		MS5611_Read(&rawData.temp, &rawData.press0);
 	}
 
-	if (rawData.flags.ping) {
+	if (!rawData.flags.ping) {
 		if (HAL_GetTick() % 300 > 150)
 			FlashLED(LED1_Pin);
 		else
